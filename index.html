@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Memorization App</title>
+  <style>
+    :root {
+      --primary-color: #2c3e50;
+      --secondary-color: #27ae60;
+      --accent-color: #e74c3c;
+      --background-color: #f2f4f7;
+      --text-color: #2c3e50;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 0 20px;
+      background-color: var(--background-color);
+      color: var(--text-color);
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    input {
+      padding: 12px;
+      margin: 8px;
+      width: 200px;
+      border: 2px solid #ddd;
+      border-radius: 5px;
+      transition: border-color 0.3s ease;
+    }
+
+    button {
+      padding: 12px 24px;
+      margin: 8px;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background-color: var(--secondary-color);
+      transform: translateY(-2px);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+    }
+
+    #wordDisplay {
+      font-size: 2.5em;
+      margin: 30px 0;
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+
+    #meaningDisplay {
+      font-size: 1.8em;
+      color: var(--secondary-color);
+      min-height: 40px;
+      font-style: italic;
+    }
+
+    .stats {
+      margin-top: 30px;
+      padding: 15px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #eee;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    .progress {
+      height: 100%;
+      background: var(--secondary-color);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+
+    #multipleChoice {
+      display: none;
+      gap: 10px;
+      flex-direction: column;
+    }
+
+    #multipleChoice button {
+      width: 100%;
+      text-align: left;
+    }
+
+    #timerDisplay {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: var(--accent-color);
+      margin: 20px 0;
+    }
+
+    #quizResult {
+      display: none;
+      font-size: 1.2em;
+      margin: 20px 0;
+      padding: 15px;
+      background: white;
+      border-radius: 10px;
+    }
+
+    #timerSettings {
+      padding: 8px;
+      margin-left: 10px;
+      border: 2px solid #ddd;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1> Memorization App </h1>
+  
+  <form onsubmit="return handleSubmit(event)">
+    <div class="form-group">
+      <input type="text" id="wordInput" placeholder="Enter a word" required>
+      <input type="text" id="meaningInput" placeholder="Enter its meaning" required>
+      <button type="submit">Add Word</button>
+    </div>
+  </form>
+
+  <div class="form-group">
+    <button onclick="showRandomWord()">Show Random Word</button>
+    <select id="timerSettings">
+      <option value="0">No Timer</option>
+      <option value="20">20 Seconds</option>
+      <option value="30">30 Seconds</option>
+      <option value="60" selected>60 Seconds</option>
+    </select>
+    <button id="startQuiz" onclick="startQuiz()" style="display: none;">Start Quiz</button>
+    <button onclick="clearAllWords()" style="background-color: var(--accent-color);">Clear All Words</button>
+  </div>
+
+  <div id="wordDisplay"></div>
+  <div id="meaningDisplay"></div>
+  <div id="timerDisplay"></div>
+  <div id="multipleChoice">
+    <button onclick="handleAnswer(0)"></button>
+    <button onclick="handleAnswer(1)"></button>
+    <button onclick="handleAnswer(2)"></button>
+  </div>
+  <div id="quizResult"></div>
+
+  <div class="stats">
+    <div>Total words: <span id="totalWords">0</span></div>
+    <div>Progress: <span id="progressCount">0</span></div>
+    <div class="progress-bar"><div class="progress"></div></div>
+  </div>
+
+  <div class="button-group">
+    <button onclick="markAsLearned()">Learned</button>
+    <button onclick="markForLater()">Learn</button>
+  </div>
+
+  <script>
+    let words = JSON.parse(localStorage.getItem('wordList') || '[]');
+    let unlearnedWords = [...words];
+    let learnedWords = new Set();
+    let currentWord = null;
+    let quizActive = false;
+    let quizWords = [];
+    let currentQuizIndex = 0;
+    let correctCount = 0;
+    let timeLeft = 0;
+    let timerInterval = null;
+
+    // Update quiz button text based on timer selection
+    document.getElementById('timerSettings').addEventListener('change', function() {
+      const timerValue = this.value;
+      const startQuizButton = document.getElementById('startQuiz');
+      if (timerValue === "0") {
+        startQuizButton.textContent = "Start Quiz (Untimed)";
+      } else {
+        startQuizButton.textContent = `Start Quiz (${timerValue}s)`;
+      }
+    });
+
+    function updateQuizButtonVisibility() {
+      const startQuizButton = document.getElementById('startQuiz');
+      startQuizButton.style.display = words.length >= 15 ? 'inline-block' : 'none';
+      // Initialize button text
+      const timerValue = document.getElementById('timerSettings').value;
+      startQuizButton.textContent = timerValue === "0" 
+        ? "Start Quiz (Untimed)" 
+        : `Start Quiz (${timerValue}s)`;
+    }
+
+    function saveWords() {
+      localStorage.setItem('wordList', JSON.stringify(words));
+      updateStats();
+      updateQuizButtonVisibility();
+    }
+
+    function handleSubmit(event) {
+      event.preventDefault();
+      const word = document.getElementById('wordInput').value.trim();
+      const meaning = document.getElementById('meaningInput').value.trim();
+      if (!word || !meaning) return;
+      words.push({ word, meaning });
+      unlearnedWords.push({ word, meaning });
+      saveWords();
+      event.target.reset();
+    }
+
+    function showRandomWord() {
+      if (quizActive) return;
+      if (unlearnedWords.length === 0) return;
+      const index = Math.floor(Math.random() * unlearnedWords.length);
+      currentWord = unlearnedWords[index];
+      document.getElementById('wordDisplay').textContent = currentWord.word;
+      document.getElementById('meaningDisplay').textContent = '';
+    }
+
+    function markAsLearned() {
+      if (!currentWord || quizActive) return;
+      document.getElementById('meaningDisplay').textContent = currentWord.meaning;
+      learnedWords.add(currentWord.word);
+      unlearnedWords = unlearnedWords.filter(w => !learnedWords.has(w.word));
+      saveWords();
+      updateStats();
+    }
+
+    function markForLater() {
+      if (!currentWord || quizActive) return;
+      document.getElementById('meaningDisplay').textContent = currentWord.meaning;
+    }
+
+    function updateStats() {
+      document.getElementById('totalWords').textContent = words.length;
+      document.getElementById('progressCount').textContent = learnedWords.size;
+      const progress = (learnedWords.size / words.length) * 100 || 0;
+      document.querySelector('.progress').style.width = `${progress}%`;
+    }
+
+    function clearAllWords() {
+      localStorage.removeItem('wordList');
+      words = [];
+      unlearnedWords = [];
+      learnedWords.clear();
+      saveWords();
+      document.getElementById('wordDisplay').textContent = '';
+      document.getElementById('meaningDisplay').textContent = '';
+      document.getElementById('quizResult').style.display = 'none';
+      updateQuizButtonVisibility();
+    }
+
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    function startQuiz() {
+      if (words.length < 15) return;
+      quizActive = true;
+      const timerValue = parseInt(document.getElementById('timerSettings').value);
+      document.querySelectorAll('.form-group, .button-group, .stats').forEach(el => el.style.display = 'none');
+      document.getElementById('meaningDisplay').style.display = 'none';
+      document.getElementById('multipleChoice').style.display = 'block';
+      quizWords = [...words];
+      shuffleArray(quizWords);
+      correctCount = 0;
+      currentQuizIndex = 0;
+      
+      if (timerValue > 0) {
+        timeLeft = timerValue;
+        document.getElementById('timerDisplay').style.display = 'block';
+        document.getElementById('timerDisplay').textContent = `Time left: ${timeLeft}s`;
+        timerInterval = setInterval(updateTimer, 1000);
+      } else {
+        document.getElementById('timerDisplay').style.display = 'none';
+      }
+      
+      showNextQuizWord();
+    }
+
+    function updateTimer() {
+      timeLeft--;
+      document.getElementById('timerDisplay').textContent = `Time left: ${timeLeft}s`;
+      if (timeLeft <= 0) endQuiz();
+    }
+
+    function generateOptions(currentWord) {
+      const otherMeanings = words.filter(w => w.meaning !== currentWord.meaning).map(w => w.meaning);
+      const uniqueMeanings = [...new Set(otherMeanings)];
+      const shuffled = uniqueMeanings.sort(() => 0.5 - Math.random()).slice(0, 2);
+      while (shuffled.length < 2) shuffled.push('Unknown');
+      const options = [
+        { meaning: currentWord.meaning, correct: true },
+        ...shuffled.map(meaning => ({ meaning, correct: false }))
+      ];
+      return options.sort(() => 0.5 - Math.random());
+    }
+
+    function showNextQuizWord() {
+      if (currentQuizIndex >= quizWords.length || (timeLeft <= 0 && document.getElementById('timerSettings').value !== "0")) {
+        endQuiz();
+        return;
+      }
+      const currentWord = quizWords[currentQuizIndex];
+      document.getElementById('wordDisplay').textContent = currentWord.word;
+      const options = generateOptions(currentWord);
+      const buttons = document.querySelectorAll('#multipleChoice button');
+      buttons.forEach((btn, i) => {
+        btn.textContent = options[i].meaning;
+        btn.dataset.correct = options[i].correct;
+        btn.style.backgroundColor = '';
+      });
+    }
+
+    function handleAnswer(index) {
+      if (!quizActive) return;
+      const buttons = document.querySelectorAll('#multipleChoice button');
+      const selectedButton = buttons[index];
+      const isCorrect = selectedButton.dataset.correct === 'true';
+      
+      buttons.forEach(button => {
+        if (button.dataset.correct === 'true') {
+          button.style.backgroundColor = '#27ae60';
+        }
+      });
+      
+      if (isCorrect) correctCount++;
+      else selectedButton.style.backgroundColor = '#e74c3c';
+      
+      setTimeout(() => {
+        currentQuizIndex++;
+        if (currentQuizIndex < quizWords.length) {
+          showNextQuizWord();
+        } else {
+          endQuiz();
+        }
+      }, 1000);
+    }
+
+    function endQuiz() {
+      if (timerInterval) clearInterval(timerInterval);
+      quizActive = false;
+      document.getElementById('multipleChoice').style.display = 'none';
+      document.getElementById('timerDisplay').textContent = '';
+      document.querySelectorAll('.form-group, .button-group, .stats').forEach(el => el.style.display = 'block');
+      document.getElementById('meaningDisplay').style.display = 'block';
+      document.getElementById('quizResult').style.display = 'block';
+      document.getElementById('quizResult').textContent = `You got ${correctCount} correct out of ${currentQuizIndex} questions!`;
+    }
+
+    updateStats();
+    updateQuizButtonVisibility();
+  </script>
+</body>
+</html>
